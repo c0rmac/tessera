@@ -72,27 +72,75 @@ Beyond solving the model, this project proposes using the **Bond Dimension ($r$)
 
 ---
 
-## 5. Technical Challenges & Research Frontiers
+## 5. Technical Challenges & Proposed Solutions
 
-The transition from a theoretical low-rank approximation to a functional HANK solver involves navigating several numerical hurdles. These challenges are categorized into the established foundations of the project and the primary areas of ongoing research.
+The development of the QTT-HANK solver addresses seven core bottlenecks where high-dimensional economic theory meets tensor algebra. Each challenge is paired with a specific deterministic or optimization-based mitigation strategy.
 
-### Group A: The Solved Foundation
-These issues have established mathematical strategies within the proposed QTT-HANK framework:
+### 1. The Curse of Dimensionality
+* **The Problem**: In HANK models with multiple assets and shocks, the state space $\mathbf{x}$ grows exponentially. A 10-dimensional grid with 100 points per axis ($10^{20}$ points) exceeds the global memory capacity of modern supercomputers.
+* **The Solution**: **Quantized Tensor Trains (QTT)**. By reshaping the $d$-dimensional grid into $d \cdot \log_2 N$ virtual binary modes, we reduce storage complexity to $O(d \cdot \log N \cdot r^2)$. This enables hyper-fine resolutions ($2^{60}$ points) within a few gigabytes of RAM.
 
-* **1. The Curse of Dimensionality**: Historically the primary barrier in macroeconomics, this is resolved by the **QTT Format**. By reshaping grids into $d \cdot \log_2 N$ binary modes, we mathematically transform exponential complexity into logarithmic scaling, enabling the use of hyper-fine grids (e.g., $2^{60}$ points).
-* **2. Operator Explosion & Rank Growth**: Applying differential operators can cause the tensor rank to inflate ($r_{new} \approx r_{op} \times r_{val}$). This is managed via **TT-Rounding**; after each operation, we perform a Singular Value Decomposition (SVD) to prune the bond dimension and maintain efficiency.
+### 2. Operator Explosion & Rank Growth
+* **The Problem**: Applying the infinitesimal generator $\mathcal{L}$ (as an MPO) to the value function $V$ (as an MPS) causes the bond dimension to multiply ($r_{new} \approx r_{op} \times r_{val}$), leading to rapid memory exhaustion.
+* **The Solution**: **Successive Deterministic Rounding**. After every operator application, we perform a Singular Value Decomposition (SVD)-based truncation. This "re-compression" prunes the redundant information introduced by the operator while maintaining a fixed fidelity threshold.
+
+### 3. Kinks & Occasionally Binding Constraints
+* **The Problem**: Borrowing limits and tax brackets introduce non-differentiable "kinks" in policy functions. These kinks break the singular value decay required for low-rank representation, causing "rank explosion."
+* **The Solution**: **Analytic Smoothing (Softplus)**. We replace sharp constraints (like ReLU) with a smooth approximation: 
+    $$f_\mu(x) = \mu \ln (1 + \exp (x/\mu))$$
+    This restores exponential singular value decay and keeps the bond dimension $r$ stable.
+
+### 4. Nonlinear Fixed-Point Instability
+* **The Problem**: Solving for General Equilibrium (GE) traditionally requires a hierarchical "Outer Loop" for price discovery (e.g., finding the interest rate $r$) and an "Inner Loop" for the Household HJB/KFE problem. In a QTT framework, aggregate supply and demand curves become "jagged" and non-smooth due to irreducible rounding noise. This makes standard root-finding algorithms like Newton-Raphson or Bisection highly unstable, as the solver frequently gets trapped in local numerical artifacts or diverges when attempting to compute gradients across the compressed tensor landscape.
+* **The Solution**: **Simultaneous Stiefel Optimization via Riemannian CBO**.
+We collapse the nested hierarchy into a single global energy minimization task. The economic state—comprising the Value Function ($V$), the Distribution ($g$), and the Price vector ($p$)—is optimized as a unified point $\mathcal{X}$ on the **Product Stiefel Manifold** ($St(n,r)^d \times \mathbb{R}^k$). Using the **Riemannian Consensus-Based Optimization (CBO)** framework, a swarm of agents navigates the manifold toward a global equilibrium.
+
+    **The Energy Function**:
+    We define the "Economic Energy" $\mathcal{J}(\mathcal{X})$ as a weighted sum of residuals that the CBO swarm aims to minimize:
+
+$$\mathcal{J}(\mathcal{X}) = \underbrace{\|\mathbf{L}_p \mathbf{V} - \mathbf{u}_p\|^2}_{\text{HJB Residual}} + \underbrace{\|\mathbf{L}_p^* \mathbf{g}\|^2}_{\text{KFE Residual}} + \lambda \underbrace{\|\int a g(a,z) da - K(p)\|^2}_{\text{Market Clearing Error}}$$
+  
+Where $\mathbf{L}_p$ is the infinitesimal generator, $\mathbf{u}_p$ is the utility/return vector, and $\lambda$ acts as the global clearing penalty.
+
+
+
+**Parameter Strategy & Quantity Management**:
+* **Lambda ($\lambda$) - Penalty Annealing**: We implement a **$\lambda$-schedule** ($\lambda_{t} = \lambda_0 \cdot \gamma^t$, where $\gamma > 1$). By starting with a small $\lambda$, we allow the particles to first explore the space of "rational" household behaviors. As the swarm thermalizes, $\lambda$ is increased to "force" the consensus toward the specific market-clearing price.
+
+### 5. Distribution Transport Instability (KFE)
+* **The Problem**: The Kolmogorov Forward Equation (KFE) governs the evolution of the agent distribution $g_t(\mathbf{x})$. In a physically valid economic model, this distribution must satisfy two strict invariants:
+    1.  **Positivity**: $g(\mathbf{x}) \geq 0$ for all $\mathbf{x}$ (No negative probabilities).
+    2.  **Conservation of Mass**: $\int g(\mathbf{x}) d\mathbf{x} = 1$ (No agent creation/destruction).
+    Standard Tensor Train solvers fail these conditions because **SVD Truncation is not positivity-preserving**. "Gibbs oscillations" near sharp cutoffs (like minimum wealth) introduce negative "ghost densities," and repeated rounding operations cause mass leakage ($\int g < 1$), leading to erroneous aggregate capital supplies and interest rate drift.
+
+* **The Solution**: **Wavefunction Squaring (MPS2) on the Spherical TT-Manifold**.
+  We abandon the direct simulation of the density $g$. Instead, we represent the distribution as the Born probability amplitude of a latent "wavefunction" tensor $\Psi$:
+
+$$g(\mathbf{x}, t) = |\Psi(\mathbf{x}, t)|^2$$
     
-* **3. Kinks & Occasionally Binding Constraints**: Non-differentiable features like borrowing limits prevent singular value decay. This is resolved via **Analytic Smoothing (Softplus)**, which "forces" the function to remain low-rank by approximating kinks with smooth, differentiable curves.
-    
+**The Geometric Framework**:
+The CBO swarm evolves on the **Spherical Fixed-Rank Manifold** ($\mathcal{S}_{\mathbf{r}}$), defined as the intersection of the Tensor Train manifold and the $L^2$-Unit Sphere:
 
-### Group B: The Research Frontier
-These areas represent the "Known Unknowns" where the interaction between economics and tensor algebra is actively being tested:
-
-* **4. Nonlinear Fixed-Point Instability**: Finding a general equilibrium requires prices to clear the market. In a compressed manifold, small numerical "compression noise" can cause the aggregate capital integral to fluctuate, potentially leading to oscillations or divergence in the fixed-point iteration.
+$$\mathcal{S}_{\mathbf{r}} = \{ \Psi \in \mathcal{M}_{\mathbf{r}} \mid \|\Psi\|_{F} = 1 \}$$
     
-* **5. Distribution Transport Instability (KFE)**: Enforcing **positivity** ($g(x) \geq 0$) and **normalization** ($\int g = 1$) in the tensor domain is non-trivial. Ensuring the probability distribution doesn't become negative due to approximation errors is a critical stability risk for the Kolmogorov Forward Equation.
-* **6. Error Control & Rank Adaptivity**: We are investigating **Dynamic Rank Adaptivity** to intelligently allocate computational resources. The goal is to automatically increase rank only in sensitive regions—such as the extreme tails of the wealth distribution—while keeping it low in flat, less critical areas of the state space.
-* **7. Policy Iteration Instability**: Approximation noise in compressed maximization algorithms (like **Zip-Up**) can cause "chattering." This occurs when the solver bounces between suboptimal policies because the compression error is larger than the actual policy improvement step.
+**The Algorithm**:
+1.  **Tangent Dynamics**: The KFE drift is mapped to the tangent space $T_{\Psi}\mathcal{S}_{\mathbf{r}}$. For a generator $\mathcal{L}^*$, the equivalent evolution for $\Psi$ is:
+
+$$\partial_t \Psi = \frac{1}{2} P_{T_{\Psi}}(\Psi^{-1} \odot \mathcal{L}^*(\Psi \odot \Psi))$$
+        
+2.  **Spherical Retraction**: After the Consensus Step updates the particle in the tangent space ($\Psi_{tan} = \Psi + \Delta t \cdot \xi$), we apply a **Normalized Retraction**:
+
+$$R_{\Psi}(\xi) = \frac{\text{TT-SVD}(\Psi_{tan})}{\|\text{TT-SVD}(\Psi_{tan})\|_2}$$
+    
+**Result**: By construction, $g = |\Psi|^2$ is strictly non-negative. By retracting to the sphere, $\int g = \int |\Psi|^2 = 1$ is conserved to machine precision. This ensures the economic model remains physically robust even under aggressive rank compression.
+
+### 6. Error Control & Rank Adaptivity
+* **The Problem**: Static bond dimensions either waste VRAM on simple areas of the state space or lose critical detail in complex regions (like the extreme wealth tails).
+* **The Solution**: TODO
+
+### 7. Policy Iteration Instability (Chattering)
+* **The Problem**: Under compression, the "Zip-Up" maximization step can introduce small errors. If these errors are larger than the improvement gained in the policy step, the solver "chatters"—bouncing between suboptimal policies without converging.
+* **The Solution**: TODO
 
 ---
 
