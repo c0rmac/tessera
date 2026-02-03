@@ -72,13 +72,27 @@ Beyond solving the model, this project proposes using the **Bond Dimension ($r$)
 
 ---
 
-## 5. Potential Challenges & Implementation Risks
+## 5. Technical Challenges & Research Frontiers
 
-Despite the theoretical advantages of the QTT approach, several technical risks remain:
+The transition from a theoretical low-rank approximation to a functional HANK solver involves navigating several numerical hurdles. These challenges are categorized into the established foundations of the project and the primary areas of ongoing research.
 
-* **Entanglement Scaling (Volume Law Risk)**: QTT efficiency relies on the "Area Law" of entanglement. If the economy enters a regime of extreme high-entropy correlations—where every state variable is strongly coupled to every other—the bond dimension $r$ may scale volumetrically, causing the computational cost to revert to the curse of dimensionality.
-* **Persistent Rank Explosion at Kinks**: While analytic smoothing (Softplus) mitigates rank growth, extreme discontinuities in policy functions (e.g., discrete labor choices or complex tax brackets) may still lead to "rank-heavy" cores that exceed available VRAM/DRAM.
-* **Numerical Convergence of AMEn**: The **Alternating Minimal Energy (AMEn)** algorithm is highly efficient for linear systems, but its stability in solving the highly non-linear, coupled HJB-KFE system is still being verified. There is a risk of the solver becoming trapped in local minima during the policy iteration phase.
+### Group A: The Solved Foundation
+These issues have established mathematical strategies within the proposed QTT-HANK framework:
+
+* **1. The Curse of Dimensionality**: Historically the primary barrier in macroeconomics, this is resolved by the **QTT Format**. By reshaping grids into $d \cdot \log_2 N$ binary modes, we mathematically transform exponential complexity into logarithmic scaling, enabling the use of hyper-fine grids (e.g., $2^{60}$ points).
+* **2. Operator Explosion & Rank Growth**: Applying differential operators can cause the tensor rank to inflate ($r_{new} \approx r_{op} \times r_{val}$). This is managed via **TT-Rounding**; after each operation, we perform a Singular Value Decomposition (SVD) to prune the bond dimension and maintain efficiency.
+    
+* **3. Kinks & Occasionally Binding Constraints**: Non-differentiable features like borrowing limits prevent singular value decay. This is resolved via **Analytic Smoothing (Softplus)**, which "forces" the function to remain low-rank by approximating kinks with smooth, differentiable curves.
+    
+
+### Group B: The Research Frontier
+These areas represent the "Known Unknowns" where the interaction between economics and tensor algebra is actively being tested:
+
+* **4. Nonlinear Fixed-Point Instability**: Finding a general equilibrium requires prices to clear the market. In a compressed manifold, small numerical "compression noise" can cause the aggregate capital integral to fluctuate, potentially leading to oscillations or divergence in the fixed-point iteration.
+    
+* **5. Distribution Transport Instability (KFE)**: Enforcing **positivity** ($g(x) \geq 0$) and **normalization** ($\int g = 1$) in the tensor domain is non-trivial. Ensuring the probability distribution doesn't become negative due to approximation errors is a critical stability risk for the Kolmogorov Forward Equation.
+* **6. Error Control & Rank Adaptivity**: We are investigating **Dynamic Rank Adaptivity** to intelligently allocate computational resources. The goal is to automatically increase rank only in sensitive regions—such as the extreme tails of the wealth distribution—while keeping it low in flat, less critical areas of the state space.
+* **7. Policy Iteration Instability**: Approximation noise in compressed maximization algorithms (like **Zip-Up**) can cause "chattering." This occurs when the solver bounces between suboptimal policies because the compression error is larger than the actual policy improvement step.
 
 ---
 
