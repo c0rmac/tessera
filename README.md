@@ -179,7 +179,7 @@ and compress in TT format with fixed rank. This places $\Psi$ on the **unit-sphe
 
 ---
 
-## 7. Mathematical References & Recent Developments
+## 7. References & Recent Developments
 
 ### Foundational Literature (from Proposal)
 * **Oseledets, I. V. (2011)**: "Tensor-train decomposition," *SIAM Journal on Scientific Computing*.
